@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Radio Fermierul Rebel</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f6f5ee; color: #202b24; font: 1rem/1.5 system-ui, sans-serif; }
+    main { max-width: 58rem; margin: 2rem auto; padding: 0 1rem; }
+    h1 { margin-bottom: .25rem; }
+    p { margin: .35rem 0 1rem; }
+    label { display: block; font-weight: 650; margin-top: 1rem; }
+    textarea { width: 100%; margin-top: .35rem; padding: .7rem; border: 1px solid #647469; border-radius: .4rem; font: .92rem/1.45 monospace; }
+    button { margin: .5rem .5rem 0 0; padding: .6rem .9rem; border: 0; border-radius: .4rem; background: #27513b; color: white; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    #status { min-height: 1.5em; margin-top: .6rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Radio Fermierul Rebel</h1>
+  <p>Pregătește lista de posturi din <cite>Farmer’s Dynasty 2</cite> cu câte un MP3 pe post. Utilitarul lucrează local, în browser.</p>
+  <form id="generator">
+    <label for="original">1. Conținutul fișierului scripts\RadioList.txt</label>
+    <textarea id="original" rows="7" required spellcheck="false" placeholder="Lipește aici lista originală de posturi."></textarea>
+    <label for="links">2. Linkurile MP3, câte unul pe rând</label>
+    <textarea id="links" rows="5" required spellcheck="false" placeholder="https://github.com/utilizator/repo/blob/main/piesa-mea.mp3"></textarea>
+    <p>Primul link înlocuiește adresa primului post, al doilea pe cea a celui de-al doilea post și așa mai departe. ID-urile, comentariile și restul posturilor se păstrează.</p>
+    <button type="submit">Generează lista</button>
+  </form>
+  <p id="status" role="status"></p>
+  <label for="result">3. Lista generată</label>
+  <textarea id="result" rows="7" readonly spellcheck="false"></textarea>
+  <button id="download" type="button" disabled>Descarcă RadioList.txt</button>
+  <p>Închide jocul și fă o copie a fișierului original înainte să pui lista nouă în folderul <code>scripts</code>.</p>
+</main>
+<script>
+  const form = document.querySelector('#generator');
+  const original = document.querySelector('#original');
+  const links = document.querySelector('#links');
+  const result = document.querySelector('#result');
+  const status = document.querySelector('#status');
+  const download = document.querySelector('#download');
+  const stationPattern = /^(\s*radio\s+\S+\s+)(https?:\/\/\S+)(.*)$/i;
+
+  function mp3Address(value, lineNumber) {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:' || url.username || url.password ||
+          !/\.mp3$/i.test(url.pathname)) {
+        throw new Error();
+      }
+      if (url.hostname === 'github.com') {
+        const match = url.pathname.match(/^\/([^/]+\/[^/]+)\/(?:blob|raw)\/(.+)$/);
+        if (!match) throw new Error();
+        return 'https://raw.githubusercontent.com/' + match[1] + '/' + match[2];
+      }
+      return url.href;
+    } catch {
+      throw new Error('Linkul de pe rândul ' + lineNumber + ' trebuie să fie o adresă HTTPS către un fișier .mp3.');
+    }
+  }
+
+  function generate(config, linkText) {
+    const addresses = linkText.split(/\r?\n/).flatMap((line, index) => {
+      const value = line.trim();
+      return value ? [mp3Address(value, index + 1)] : [];
+    });
+    if (!addresses.length) throw new Error('Adaugă cel puțin un link MP3.');
+    const lines = config.split(/(\r\n|\n|\r)/);
+    const stations = lines.filter(line => stationPattern.test(line)).length;
+    if (addresses.length > stations) {
+      throw new Error('Ai ' + addresses.length + ' linkuri și ' + stations + ' posturi recunoscute în lista originală.');
+    }
+
+    let index = 0;
+    const updated = lines.map(line => {
+      const match = line.match(stationPattern);
+      if (!match || index === addresses.length) return line;
+      return match[1] + addresses[index++] + match[3];
+    });
+    return { text: updated.join(''), count: index };
+  }
+
+  form.addEventListener('input', () => {
+    result.value = '';
+    status.textContent = '';
+    download.disabled = true;
+  });
+
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    try {
+      const generated = generate(original.value, links.value);
+      result.value = generated.text;
+      status.textContent = 'Adrese înlocuite: ' + generated.count + '.';
+      download.disabled = false;
+    } catch (error) {
+      result.value = '';
+      status.textContent = error.message;
+      download.disabled = true;
+    }
+  });
+
+  download.addEventListener('click', () => {
+    const file = new Blob([result.value], { type: 'text/plain;charset=utf-8' });
+    const address = URL.createObjectURL(file);
+    const anchor = document.createElement('a');
+    anchor.href = address;
+    anchor.download = 'RadioList.txt';
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(address), 1000);
+  });
+</script>
+</body>
+</html>
